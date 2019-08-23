@@ -1,5 +1,5 @@
 from collections import deque
-
+from copy import deepcopy
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -8,14 +8,32 @@ from utills import DefaultHead, Flatten
 
 
 class CustomWrapper(nn.Module):
+    """ Wrapper for any backbone with custom head.
+
+        Parameters
+        ----------
+            backbone: nn.Module
+                Base network for wrapper
+
+            head: nn.Module
+                Your own custom head of network
+
+            n_time: int
+                Number of sampled heads
+
+            dropout: None, list, tuple:
+                If None defaul dropout with 40% and 30% ratio are used
+                If list or tupele you can use custom dropout with custom ratios
+    """
 
     def __init__(self, backbone, head=None, n_times=8, drop_rate=0.4, dropout=None):
         super().__init__()
 
-        self.backbone = backbone.copy()
+        self.backbone = deepcopy(backbone)
         self.n_times = n_times
         self.drop_rate = drop_rate
-
+        self.n_classes = list(head.children())[-1].out_features
+        
         if dropout is not None:
             self.dropout = dropout
         else:
@@ -30,10 +48,10 @@ class CustomWrapper(nn.Module):
         ms_output = torch.zeros((self.n_times - self.n_times % 2,
                                 x.size(0), self.n_classes))
         x = self.backbone(x)
-        for _ in range(self.n_times):
+        for n in range(self.n_times):
             x_dropped = self.dropout(x)
             x_dropped = self.head(x_dropped)
-            ms_output[i] = x_dropped
+            ms_output[n] = x_dropped
 
         output = torch.mean(ms_output, dim=0)
         return output
@@ -50,6 +68,9 @@ class MultisampleWrapper(nn.Module):
             backbone: nn.Module
                 Base network for wrapper
 
+            backbone_output_shape: tuple, list
+                CxHxW shape of backbone output
+
             n_classes: int
                 Number of clsases of output dimension
 
@@ -63,7 +84,7 @@ class MultisampleWrapper(nn.Module):
 
     def __init__(self, backbone, backbone_output_shape, n_classes, n_times=8, dropout=None):
         super().__init__()
-        self.backbone = backbone
+        self.backbone = deepcopy(backbone)
         self.n_times = n_times
         self.n_classes = n_classes
         self.d_model = backbone_output_shape[0]
